@@ -1,0 +1,1 @@
+"""Issue report dashboard package."""

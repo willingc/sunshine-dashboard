@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Issue Report Dashboard</title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.7/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+    <link
+      href="https://cdn.datatables.net/2.3.4/css/dataTables.bootstrap5.css"
+      rel="stylesheet"
+    />
+    <link href="/static/style.css" rel="stylesheet" />
+  </head>
+  <body class="dashboard-bg">
+    <main class="container py-4">
+      <section class="mb-4">
+        <h1 class="display-6 fw-bold text-white mb-3">GitHub Issue Dashboard</h1>
+        <form method="get" class="card shadow-sm border-0">
+          <div class="card-body row g-3 align-items-end">
+            <div class="col-md-4">
+              <label class="form-label">Repository</label>
+              <input class="form-control" type="text" name="repo" value="{{ repo }}" />
+            </div>
+            <div class="col-md-5">
+              <label class="form-label">Sort By</label>
+              <select class="form-select" name="sort_by">
+                <option value="created_at" {% if sort_by == "created_at" %}selected{% endif %}>Creation Date</option>
+                <option value="updated_at" {% if sort_by == "updated_at" %}selected{% endif %}>Last Active Date</option>
+              </select>
+            </div>
+            <div class="col-md-2">
+              <label class="form-label">Direction</label>
+              <select class="form-select" name="descending">
+                <option value="true" {% if descending %}selected{% endif %}>Newest first</option>
+                <option value="false" {% if not descending %}selected{% endif %}>Oldest first</option>
+              </select>
+            </div>
+            <div class="col-md-1 d-grid">
+              <button class="btn btn-primary" type="submit">Load</button>
+            </div>
+          </div>
+        </form>
+      </section>
+
+      <section class="row g-3 mb-4">
+        <div class="col-md-6">
+          <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+              <p class="text-muted mb-1">Open Issues Displayed</p>
+              <h2 class="h3 mb-0">{{ total }}</h2>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-6">
+          <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+              <p class="text-muted mb-1">Issue State Filter</p>
+              <h2 class="h3 mb-0 text-success">Open Only</h2>
+            </div>
+          </div>
+        </div>
+        <!-- Keeping this metric for compatibility if future filtering returns mixed states. -->
+        <div class="d-none">
+          <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+              <p class="text-muted mb-1">Open Issues</p>
+              <h2 class="h3 mb-0 text-success">{{ open_count }}</h2>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {% if error_message %}
+      <section class="alert alert-warning border-0 shadow-sm" role="alert">
+        <strong>Issue fetch failed.</strong> {{ error_message }}
+      </section>
+      {% endif %}
+
+      <section class="card border-0 shadow-sm">
+        <div class="card-body">
+          <div class="table-responsive">
+            <table id="issues-table" class="table table-striped table-hover align-middle">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Title</th>
+                  <th>State</th>
+                  <th>Created</th>
+                  <th>Last Active</th>
+                  <th>Comments</th>
+                  <th>Author</th>
+                  <th>Labels</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for issue in issues %}
+                <tr>
+                  <td><a href="{{ issue.url }}" target="_blank" rel="noreferrer">{{ issue.number }}</a></td>
+                  <td>{{ issue.title }}</td>
+                  <td>
+                    <span class="badge {% if issue.state == 'open' %}text-bg-success{% else %}text-bg-secondary{% endif %}">
+                      {{ issue.state }}
+                    </span>
+                  </td>
+                  <td>{{ issue.created_at }}</td>
+                  <td>{{ issue.updated_at }}</td>
+                  <td>{{ issue.comments }}</td>
+                  <td>{{ issue.author }}</td>
+                  <td>{{ issue.labels }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.datatables.net/2.3.4/js/dataTables.js"></script>
+    <script src="https://cdn.datatables.net/2.3.4/js/dataTables.bootstrap5.js"></script>
+    <script>
+      new DataTable("#issues-table", {
+        pageLength: 25,
+        order: [[3, "desc"]],
+      });
+    </script>
+  </body>
+</html>

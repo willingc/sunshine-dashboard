@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "issue-report-dashboard"
+version = "0.1.0"
+description = "Visual dashboard for GitHub issue reports."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.116.0",
+    "jinja2>=3.1.0",
+    "uvicorn>=0.35.0",
+]
+
+[project.scripts]
+issue-report-dashboard = "issue_report_dashboard.app:main"

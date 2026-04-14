@@ -1,0 +1,13 @@
+body.dashboard-bg {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #1f2a44, #1f6f8b);
+}
+
+.card {
+  border-radius: 14px;
+}
+
+#issues-table td,
+#issues-table th {
+  vertical-align: middle;
+}
