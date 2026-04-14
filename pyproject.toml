@@ -16,4 +16,6 @@ dependencies = [
 
 [project.scripts]
 sunshine-dashboard = "sunshine_dashboard.app:main"
- 
+
+[tool.fastapi]
+entrypoint = "src.sunshine_dashboard.app:app"
