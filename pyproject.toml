@@ -3,7 +3,7 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "issue-report-dashboard"
+name = "sunshine_dashboard"
 version = "0.1.0"
 description = "Visual dashboard for GitHub issue reports."
 readme = "README.md"
@@ -15,4 +15,5 @@ dependencies = [
 ]
 
 [project.scripts]
-issue-report-dashboard = "issue_report_dashboard.app:main"
+sunshine-dashboard = "sunshine_dashboard.app:main"
+ 
