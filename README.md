@@ -1,2 +1,3 @@
 # sunshine-dashboard
-issues
+
+Dashboard for issues
