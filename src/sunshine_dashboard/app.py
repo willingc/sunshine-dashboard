@@ -30,7 +30,9 @@ def index(
     rows = []
     try:
         rows = fetch_issues(repo=repo, state=state)
-        rows.sort(key=lambda row: iso_to_datetime(getattr(row, sort_by)), reverse=descending)
+        rows.sort(
+            key=lambda row: iso_to_datetime(getattr(row, sort_by)), reverse=descending
+        )
     except RuntimeError as exc:
         error_message = str(exc)
     counts = Counter(row.state for row in rows)
@@ -51,7 +53,7 @@ def index(
 
 
 def main() -> None:
-    uvicorn.run("issue_report_dashboard.app:app", host="127.0.0.1", port=8000, reload=True)
+    uvicorn.run("sunshine_dashboard.app:app", host="127.0.0.1", port=8000, reload=True)
 
 
 if __name__ == "__main__":
