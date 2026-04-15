@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 
@@ -29,98 +28,147 @@ def iso_to_datetime(value: str) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
-def _fetch_with_gh(repo: str, state: str) -> list[list[dict[str, Any]]] | None:
-    endpoint = f"/repos/{repo}/issues?state={state}&per_page=100"
+_MAX_PAGES = 200
+
+
+def _build_query(state: str) -> str:
+    if state == "open":
+        states_arg = ", states: [OPEN]"
+    elif state == "closed":
+        states_arg = ", states: [CLOSED]"
+    else:
+        states_arg = ""
+    return (
+        "query($owner: String!, $name: String!, $endCursor: String) {"
+        "  repository(owner: $owner, name: $name) {"
+        "    issues(first: 100, after: $endCursor,"
+        "           orderBy: {field: CREATED_AT, direction: DESC}" + states_arg + ") {"
+        "      pageInfo { hasNextPage endCursor }"
+        "      nodes {"
+        "        number title state createdAt updatedAt closedAt url"
+        "        comments { totalCount }"
+        "        author { login }"
+        "        labels(first: 50) { nodes { name } }"
+        "      }"
+        "    }"
+        "  }"
+        "}"
+    )
+
+
+def _split_repo(repo: str) -> tuple[str, str]:
+    owner, _, name = repo.partition("/")
+    if not owner or not name:
+        raise RuntimeError(f"Invalid repo '{repo}'. Expected 'owner/name'.")
+    return owner, name
+
+
+def _issues_from_response(response: dict[str, Any]) -> dict[str, Any]:
+    data = response.get("data") or {}
+    repository = data.get("repository")
+    if not repository:
+        errors = response.get("errors") or []
+        message = errors[0].get("message") if errors else "Repository not found."
+        raise RuntimeError(f"GitHub GraphQL error: {message}")
+    return repository["issues"]
+
+
+def _fetch_with_gh(owner: str, name: str, state: str, token: str) -> list[dict[str, Any]] | None:
+    query = _build_query(state)
     try:
         proc = subprocess.run(
-            ["gh", "api", "--paginate", "--slurp", endpoint],
+            [
+                "gh", "api", "graphql", "--paginate", "--slurp",
+                "-f", f"query={query}",
+                "-F", f"owner={owner}",
+                "-F", f"name={name}",
+            ],
             capture_output=True,
             text=True,
             check=False,
-            timeout=20,
+            timeout=60,
+            env={**os.environ, "GH_TOKEN": token},
         )
     except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
         return None
     if proc.returncode != 0:
         return None
     try:
-        parsed = json.loads(proc.stdout)
+        pages = json.loads(proc.stdout)
     except json.JSONDecodeError:
         return None
-    if not isinstance(parsed, list):
+    if not isinstance(pages, list):
         return None
-    return parsed
+    nodes: list[dict[str, Any]] = []
+    for page in pages:
+        nodes.extend(_issues_from_response(page).get("nodes", []) or [])
+    return nodes
 
 
-def _fetch_with_rest(repo: str, state: str) -> list[list[dict[str, Any]]]:
-    headers = {"Accept": "application/vnd.github+json"}
-    token = os.getenv("GH_TOKEN") or os.getenv("GITHUB_TOKEN")
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-
-    page = 1
-    pages: list[list[dict[str, Any]]] = []
-    max_pages = 200
-    while page <= max_pages:
-        query = urlencode({"state": state, "per_page": 100, "page": page})
-        request = Request(f"https://api.github.com/repos/{repo}/issues?{query}", headers=headers)
+def _fetch_with_https(owner: str, name: str, state: str, token: str) -> list[dict[str, Any]]:
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {token}",
+    }
+    query = _build_query(state)
+    nodes: list[dict[str, Any]] = []
+    cursor: str | None = None
+    for _ in range(_MAX_PAGES):
+        body = json.dumps(
+            {"query": query, "variables": {"owner": owner, "name": name, "endCursor": cursor}}
+        ).encode("utf-8")
+        request = Request(
+            "https://api.github.com/graphql", data=body, headers=headers, method="POST"
+        )
         try:
             with urlopen(request, timeout=30) as response:
                 payload = response.read().decode("utf-8")
         except HTTPError as exc:
             details = exc.read().decode("utf-8", errors="replace")
             raise RuntimeError(
-                "GitHub API request failed. "
-                "Set a valid GH_TOKEN or GITHUB_TOKEN to avoid low unauthenticated limits.\n"
-                f"HTTP {exc.code}: {details}"
+                f"GitHub GraphQL request failed. HTTP {exc.code}: {details}"
             ) from exc
         except URLError as exc:
             raise RuntimeError(
-                "Unable to connect to GitHub API. Check your network, proxy, or VPN settings."
+                "Unable to connect to GitHub GraphQL. Check your network, proxy, or VPN."
             ) from exc
-        current_page = json.loads(payload)
-        if isinstance(current_page, dict):
-            raise RuntimeError(
-                "GitHub API returned an unexpected response. "
-                "This often means rate-limiting or authentication failure.\n"
-                f"Payload: {current_page}"
-            )
-        if not isinstance(current_page, list):
-            raise RuntimeError(f"Unexpected GitHub payload type: {type(current_page)}")
-        if not current_page:
-            break
-        pages.append(current_page)
-        page += 1
-    else:
-        raise RuntimeError(
-            "Stopped after 200 pages to avoid an infinite fetch loop. "
-            "Try narrowing results with state=open/closed or verify API responses."
-        )
-    return pages
+        issues = _issues_from_response(json.loads(payload))
+        nodes.extend(issues.get("nodes", []) or [])
+        page_info = issues.get("pageInfo") or {}
+        if not page_info.get("hasNextPage"):
+            return nodes
+        cursor = page_info.get("endCursor")
+    raise RuntimeError(
+        f"Stopped after {_MAX_PAGES} pages to avoid an infinite fetch loop."
+    )
+
+
+def _to_row(node: dict[str, Any]) -> IssueRow:
+    author = node.get("author") or {}
+    labels = (node.get("labels") or {}).get("nodes") or []
+    return IssueRow(
+        number=node["number"],
+        title=node["title"],
+        state=node["state"].lower(),
+        created_at=node["createdAt"],
+        updated_at=node["updatedAt"],
+        closed_at=node.get("closedAt"),
+        author=author.get("login", ""),
+        comments=(node.get("comments") or {}).get("totalCount", 0),
+        labels=", ".join(label["name"] for label in labels),
+        url=node["url"],
+    )
 
 
 def fetch_issues(repo: str, state: str = "all") -> list[IssueRow]:
-    pages = _fetch_with_gh(repo, state)
-    if pages is None:
-        pages = _fetch_with_rest(repo, state)
-
-    rows: list[IssueRow] = []
-    for page in pages:
-        for item in page:
-            if "pull_request" in item:
-                continue
-            rows.append(
-                IssueRow(
-                    number=item["number"],
-                    title=item["title"],
-                    state=item["state"],
-                    created_at=item["created_at"],
-                    updated_at=item["updated_at"],
-                    closed_at=item["closed_at"],
-                    author=item["user"]["login"] if item.get("user") else "",
-                    comments=item["comments"],
-                    labels=", ".join(label["name"] for label in item.get("labels", [])),
-                    url=item["html_url"],
-                )
-            )
-    return rows
+    token = os.getenv("GH_TOKEN") or os.getenv("GITHUB_TOKEN")
+    if not token:
+        raise RuntimeError(
+            "GitHub access token required. Set GH_TOKEN or GITHUB_TOKEN."
+        )
+    owner, name = _split_repo(repo)
+    nodes = _fetch_with_gh(owner, name, state, token)
+    if nodes is None:
+        nodes = _fetch_with_https(owner, name, state, token)
+    return [_to_row(node) for node in nodes]
