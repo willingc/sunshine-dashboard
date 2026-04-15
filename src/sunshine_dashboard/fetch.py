@@ -39,11 +39,14 @@ def _fetch_with_gh(repo: str, state: str) -> list[list[dict[str, Any]]] | None:
             check=False,
             timeout=20,
         )
-    except subprocess.TimeoutExpired:
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
         return None
     if proc.returncode != 0:
         return None
-    parsed = json.loads(proc.stdout)
+    try:
+        parsed = json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        return None
     if not isinstance(parsed, list):
         return None
     return parsed
@@ -51,7 +54,7 @@ def _fetch_with_gh(repo: str, state: str) -> list[list[dict[str, Any]]] | None:
 
 def _fetch_with_rest(repo: str, state: str) -> list[list[dict[str, Any]]]:
     headers = {"Accept": "application/vnd.github+json"}
-    token = os.getenv("GH_TOKEN")
+    token = os.getenv("GH_TOKEN") or os.getenv("GITHUB_TOKEN")
     if token:
         headers["Authorization"] = f"Bearer {token}"
 
@@ -68,7 +71,7 @@ def _fetch_with_rest(repo: str, state: str) -> list[list[dict[str, Any]]]:
             details = exc.read().decode("utf-8", errors="replace")
             raise RuntimeError(
                 "GitHub API request failed. "
-                "Set a valid GH_TOKEN to avoid low unauthenticated limits.\n"
+                "Set a valid GH_TOKEN or GITHUB_TOKEN to avoid low unauthenticated limits.\n"
                 f"HTTP {exc.code}: {details}"
             ) from exc
         except URLError as exc:
