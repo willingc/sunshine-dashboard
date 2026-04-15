@@ -3,11 +3,17 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import threading
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+
+_CACHE_TTL_SECONDS = 24 * 60 * 60
+_cache: dict[tuple[str, str], tuple[float, list["IssueRow"]]] = {}
+_cache_lock = threading.Lock()
 
 
 @dataclass(frozen=True)
@@ -162,6 +168,13 @@ def _to_row(node: dict[str, Any]) -> IssueRow:
 
 
 def fetch_issues(repo: str, state: str = "all") -> list[IssueRow]:
+    key = (repo, state)
+    now = time.time()
+    with _cache_lock:
+        cached = _cache.get(key)
+        if cached and now - cached[0] < _CACHE_TTL_SECONDS:
+            return cached[1]
+
     token = os.getenv("GH_TOKEN") or os.getenv("GITHUB_TOKEN")
     if not token:
         raise RuntimeError(
@@ -171,4 +184,8 @@ def fetch_issues(repo: str, state: str = "all") -> list[IssueRow]:
     nodes = _fetch_with_gh(owner, name, state, token)
     if nodes is None:
         nodes = _fetch_with_https(owner, name, state, token)
-    return [_to_row(node) for node in nodes]
+    rows = [_to_row(node) for node in nodes]
+
+    with _cache_lock:
+        _cache[key] = (now, rows)
+    return rows
