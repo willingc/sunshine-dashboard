@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from datetime import UTC, datetime
 from unittest import mock
 
 import pytest
@@ -163,3 +164,63 @@ def test_external_assets_have_sri(client: TestClient, fake_fetch: mock.Mock) -> 
     for tag in external:
         assert re.search(r'integrity="sha384-[A-Za-z0-9+/=]+"', tag), tag
         assert 'crossorigin="anonymous"' in tag, tag
+
+
+NOW = datetime(2026, 6, 15, 12, 0, tzinfo=UTC)
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("2026-06-15T11:59:30Z", "just now"),
+        ("2026-06-15T11:59:00Z", "1 minute ago"),
+        ("2026-06-15T11:15:00Z", "45 minutes ago"),
+        ("2026-06-15T11:00:00Z", "1 hour ago"),
+        ("2026-06-15T01:00:00Z", "11 hours ago"),
+        ("2026-06-14T12:00:00Z", "yesterday"),
+        ("2026-06-12T12:00:00Z", "3 days ago"),
+        ("2026-05-17T12:00:00Z", "29 days ago"),
+        ("2026-05-16T12:00:00Z", "1 month ago"),  # 30 days
+        ("2026-05-15T12:00:00Z", "1 month ago"),
+        ("2025-06-16T12:00:00Z", "12 months ago"),
+        ("2025-06-15T12:00:00Z", "1 year ago"),
+        ("2023-01-01T00:00:00Z", "3 years ago"),
+    ],
+)
+def test_age(value: str, expected: str) -> None:
+    assert app_module.age(value, NOW) == expected
+
+
+def test_dates_show_day_and_age_and_sort_by_timestamp(
+    client: TestClient, fake_fetch: mock.Mock
+) -> None:
+    html = client.get("/", params={"repo": "o/n"}).text
+    cell = re.search(
+        r'<td class="text-nowrap" data-order="2026-01-01T00:00:00Z"[^>]*>(.*?)</td>',
+        html,
+        re.DOTALL,
+    )
+    assert cell, "created/updated cells keep the full timestamp for sorting"
+    assert "2026-01-01" in cell.group(1)
+    assert "ago" in cell.group(1)
+    assert "T00:00:00Z" not in cell.group(1)  # raw timestamp no longer shown
+
+
+def test_labels_render_as_colored_badges(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    node = make_node(
+        labels={
+            "nodes": [
+                {"name": "bug", "color": "b60205"},
+                {"name": "<b>sneaky</b>", "color": "x; background: url(evil)"},
+            ]
+        }
+    )
+    monkeypatch.setattr(fetch, "_fetch_with_any_token", mock.Mock(return_value=[node]))
+    html = client.get("/", params={"repo": "o/n"}).text
+    assert 'background-color: #b60205; color: #ffffff">bug</span>' in html
+    # Invalid colors fall back to gray, and label names are HTML-escaped.
+    assert "background-color: #ededed; color: #000000" in html
+    assert "&lt;b&gt;sneaky&lt;/b&gt;" in html
+    assert "evil" not in html

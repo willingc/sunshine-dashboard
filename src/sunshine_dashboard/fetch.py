@@ -27,6 +27,28 @@ _cache_lock = threading.Lock()  # guards _cache and _key_locks
 _key_locks: dict[_CacheKey, threading.Lock] = {}
 
 
+_HEX_COLOR_RE = re.compile(r"^[0-9a-fA-F]{6}$")
+_DEFAULT_LABEL_COLOR = "ededed"  # GitHub's light gray
+
+
+@dataclass(frozen=True)
+class Label:
+    name: str
+    color: str  # 6-digit hex without "#", validated in _to_label
+
+    @property
+    def text_color(self) -> str:
+        """Black or white, whichever has more contrast with the label color (WCAG)."""
+        r, g, b = (int(self.color[i : i + 2], 16) / 255 for i in (0, 2, 4))
+
+        def linear(c: float) -> float:
+            return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+
+        luminance = 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b)
+        # Contrast with black is (L + 0.05) / 0.05, with white 1.05 / (L + 0.05).
+        return "#000000" if luminance > 0.179 else "#ffffff"
+
+
 @dataclass(frozen=True)
 class IssueRow:
     number: int
@@ -37,7 +59,7 @@ class IssueRow:
     closed_at: str | None
     author: str
     comments: int
-    labels: str
+    labels: tuple[Label, ...]
     url: str
 
 
@@ -82,7 +104,7 @@ def _build_query(state: str) -> str:
         "        number title state createdAt updatedAt closedAt url"
         "        comments { totalCount }"
         "        author { login }"
-        "        labels(first: 50) { nodes { name } }"
+        "        labels(first: 50) { nodes { name color } }"
         "      }"
         "    }"
         "  }"
@@ -200,6 +222,13 @@ def _fetch_with_any_token(owner: str, name: str, state: str) -> list[dict[str, A
     )
 
 
+def _to_label(node: dict[str, Any]) -> Label:
+    color = node.get("color") or ""
+    if not _HEX_COLOR_RE.match(color):
+        color = _DEFAULT_LABEL_COLOR
+    return Label(name=node["name"], color=color.lower())
+
+
 def _to_row(node: dict[str, Any]) -> IssueRow:
     author = node.get("author") or {}
     labels = (node.get("labels") or {}).get("nodes") or []
@@ -212,7 +241,7 @@ def _to_row(node: dict[str, Any]) -> IssueRow:
         closed_at=node.get("closedAt"),
         author=author.get("login", ""),
         comments=(node.get("comments") or {}).get("totalCount", 0),
-        labels=", ".join(label["name"] for label in labels),
+        labels=tuple(_to_label(label) for label in labels),
         url=node["url"],
     )
 

@@ -62,21 +62,29 @@ def test_to_row_maps_fields() -> None:
         state="CLOSED",
         closedAt="2026-03-01T00:00:00Z",
         comments={"totalCount": 3},
-        labels={"nodes": [{"name": "bug"}, {"name": "good first issue"}]},
+        labels={
+            "nodes": [
+                {"name": "bug", "color": "D73A4A"},
+                {"name": "good first issue", "color": "7057ff"},
+            ]
+        },
     )
     row = fetch._to_row(node)
     assert row.number == 7
     assert row.state == "closed"
     assert row.closed_at == "2026-03-01T00:00:00Z"
     assert row.comments == 3
-    assert row.labels == "bug, good first issue"
+    assert row.labels == (
+        fetch.Label("bug", "d73a4a"),
+        fetch.Label("good first issue", "7057ff"),
+    )
     assert row.author == "someone"
 
 
 def test_to_row_handles_deleted_author_and_missing_fields() -> None:
     row = fetch._to_row(make_node(author=None, labels=None, comments=None))
     assert row.author == ""
-    assert row.labels == ""
+    assert row.labels == ()
     assert row.comments == 0
 
 
@@ -354,3 +362,35 @@ def test_different_repos_fetch_in_parallel(monkeypatch: pytest.MonkeyPatch) -> N
         thread.join(timeout=10)
     assert ("a/one", "open") in fetch._cache
     assert ("b/two", "open") in fetch._cache
+
+
+def test_query_requests_label_colors() -> None:
+    assert "labels(first: 50) { nodes { name color } }" in fetch._build_query("open")
+
+
+@pytest.mark.parametrize(
+    "color", [None, "", "red", "#d73a4a", "12345", "zzzzzz", "fff"]
+)
+def test_invalid_label_color_falls_back_to_gray(color: str | None) -> None:
+    label = fetch._to_label({"name": "x", "color": color})
+    assert label.color == "ededed"
+
+
+@pytest.mark.parametrize(
+    ("color", "text"),
+    [
+        ("ffffff", "#000000"),
+        ("ededed", "#000000"),  # GitHub default gray
+        ("fbca04", "#000000"),  # yellow
+        ("a2eeef", "#000000"),  # light cyan ("enhancement")
+        ("000000", "#ffffff"),
+        ("b60205", "#ffffff"),  # dark red
+        # GitHub's "bug" red is a near-tie (black 4.59:1 vs white 4.58:1).
+        # WCAG picks black; GitHub's own formula shows white.
+        ("d73a4a", "#000000"),
+        ("0075ca", "#ffffff"),  # blue ("documentation")
+        ("7057ff", "#ffffff"),  # purple ("good first issue")
+    ],
+)
+def test_label_text_color_contrast(color: str, text: str) -> None:
+    assert fetch.Label("x", color).text_color == text

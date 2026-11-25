@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import UTC, datetime
 from pathlib import Path
 
 import uvicorn
@@ -14,6 +15,30 @@ from .fetch import FetchResult, fetch_issues, iso_to_datetime
 # templates/ and static/ ship inside the package so the app works when installed.
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+
+
+def age(value: str, now: datetime) -> str:
+    """Describe how long ago an ISO timestamp was, e.g. "3 months ago"."""
+    seconds = (now - iso_to_datetime(value)).total_seconds()
+    days = int(seconds // 86400)
+    if seconds < 60:
+        return "just now"
+    if seconds < 3600:
+        amount, unit = int(seconds // 60), "minute"
+    elif days < 1:
+        amount, unit = int(seconds // 3600), "hour"
+    elif days == 1:
+        return "yesterday"
+    elif days < 30:
+        amount, unit = days, "day"
+    elif days < 365:
+        amount, unit = days // 30, "month"
+    else:
+        amount, unit = days // 365, "year"
+    return f"{amount} {unit}{'' if amount == 1 else 's'} ago"
+
+
+templates.env.filters["age"] = age
 
 app = FastAPI(title="Issue Report Dashboard")
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
@@ -58,6 +83,7 @@ def index(
             "issues": rows,
             "total": len(rows),
             "fetched_at": result.fetched_at if result else None,
+            "now": datetime.now(UTC),
             "error_message": error_message,
         },
     )
