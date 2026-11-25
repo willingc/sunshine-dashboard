@@ -57,17 +57,15 @@
         <div class="col-md-6">
           <div class="card border-0 shadow-sm h-100">
             <div class="card-body">
-              <p class="text-muted mb-1">Issue State Filter</p>
-              <h2 class="h3 mb-0 text-success">Open Only</h2>
-            </div>
-          </div>
-        </div>
-        <!-- Keeping this metric for compatibility if future filtering returns mixed states. -->
-        <div class="d-none">
-          <div class="card border-0 shadow-sm h-100">
-            <div class="card-body">
-              <p class="text-muted mb-1">Open Issues</p>
-              <h2 class="h3 mb-0 text-success">{{ open_count }}</h2>
+              <p class="text-muted mb-1">Data fetched</p>
+              <div class="d-flex align-items-center justify-content-between gap-2">
+                <h2 class="h3 mb-0">
+                  {% if fetched_at %}{{ fetched_at.strftime("%Y-%m-%d %H:%M UTC") }}{% else %}&mdash;{% endif %}
+                </h2>
+                <a class="btn btn-outline-primary btn-sm"
+                   href="{{ request.url.include_query_params(refresh='true') }}"
+                   title="Fetch fresh data from GitHub (cached for 24 hours otherwise)">Refresh</a>
+              </div>
             </div>
           </div>
         </div>

@@ -11,12 +11,20 @@ Requires [uv](https://docs.astral.sh/uv/) and the [GitHub CLI](https://cli.githu
 From the repository root:
 
 ```bash
-GH_TOKEN=$(env -u GH_TOKEN gh auth token) uv run sunshine-dashboard
+uv run sunshine-dashboard
 ```
 
 Then open <http://127.0.0.1:8000>.
 
-The `env -u GH_TOKEN` part makes `gh` return your logged-in (keyring) token
-even if a `GH_TOKEN` is already set in your shell. Without it, `gh auth token`
-just echoes that existing value, and if it's expired or revoked the dashboard
-shows `HTTP 401: Bad credentials`.
+Options: `--host`, `--port`, and `--reload` (restart on code changes, for development).
+
+### GitHub token
+
+The dashboard tries these tokens in order, moving on to the next one if GitHub
+rejects a token as expired or revoked (`HTTP 401: Bad credentials`):
+
+1. `GH_TOKEN`
+2. `GITHUB_TOKEN`
+3. Your GitHub CLI login (`gh auth token`)
+
+Issue data is cached for 24 hours. Use the **Refresh** button to fetch fresh data.
