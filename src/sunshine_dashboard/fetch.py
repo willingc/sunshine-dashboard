@@ -106,7 +106,7 @@ def _gh_keyring_token() -> str | None:
     env = {k: v for k, v in os.environ.items() if k not in _TOKEN_ENV_VARS}
     try:
         proc = subprocess.run(
-            ["gh", "auth", "token"],
+            ["gh", "auth", "token", "--hostname", "github.com"],
             capture_output=True, text=True, check=False, timeout=10, env=env,
         )
     except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
