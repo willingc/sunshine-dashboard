@@ -7,7 +7,7 @@ import subprocess
 import threading
 from collections.abc import Iterator
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -23,7 +23,8 @@ _REPO_RE = re.compile(r"^(?P<owner>[A-Za-z0-9-]+)/(?P<name>[A-Za-z0-9._-]+)$")
 _CacheKey = tuple[str, str]
 _cache: dict[_CacheKey, FetchResult] = {}
 _cache_lock = threading.Lock()  # guards _cache and _key_locks
-_key_locks: dict[_CacheKey, threading.Lock] = {}  # one fetch per (repo, state) at a time
+# One lock per (repo, state), so only one fetch for a given key runs at a time.
+_key_locks: dict[_CacheKey, threading.Lock] = {}
 
 
 @dataclass(frozen=True)
@@ -58,7 +59,9 @@ def parse_repo(repo: str) -> tuple[str, str]:
     """Split 'owner/name' and validate it, raising RuntimeError if malformed."""
     match = _REPO_RE.match(repo.strip())
     if not match:
-        raise RuntimeError(f"Invalid repo '{repo}'. Expected 'owner/name', e.g. 'napari/napari'.")
+        raise RuntimeError(
+            f"Invalid repo '{repo}'. Expected 'owner/name', e.g. 'napari/napari'."
+        )
     return match["owner"], match["name"]
 
 
@@ -107,9 +110,13 @@ def _gh_keyring_token() -> str | None:
     try:
         proc = subprocess.run(
             ["gh", "auth", "token", "--hostname", "github.com"],
-            capture_output=True, text=True, check=False, timeout=10, env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+            env=env,
         )
-    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+    except FileNotFoundError, subprocess.TimeoutExpired, OSError:
         return None
     token = proc.stdout.strip()
     return token if proc.returncode == 0 and token else None
@@ -142,7 +149,10 @@ def _fetch_nodes(owner: str, name: str, state: str, token: str) -> list[dict[str
     cursor: str | None = None
     for _ in range(_MAX_PAGES):
         body = json.dumps(
-            {"query": query, "variables": {"owner": owner, "name": name, "endCursor": cursor}}
+            {
+                "query": query,
+                "variables": {"owner": owner, "name": name, "endCursor": cursor},
+            }
         ).encode("utf-8")
         request = Request(_GRAPHQL_URL, data=body, headers=headers, method="POST")
         try:
@@ -207,7 +217,9 @@ def _to_row(node: dict[str, Any]) -> IssueRow:
     )
 
 
-def fetch_issues(repo: str, state: str = "all", *, refresh: bool = False) -> FetchResult:
+def fetch_issues(
+    repo: str, state: str = "all", *, refresh: bool = False
+) -> FetchResult:
     """Return issues for `repo`, cached for 24 hours.
 
     `refresh=True` bypasses the cache, unless another request finished a fetch
@@ -216,7 +228,7 @@ def fetch_issues(repo: str, state: str = "all", *, refresh: bool = False) -> Fet
     """
     owner, name = parse_repo(repo)
     key = (f"{owner}/{name}".lower(), state)
-    requested_at = datetime.now(timezone.utc)
+    requested_at = datetime.now(UTC)
 
     with _cache_lock:
         key_lock = _key_locks.setdefault(key, threading.Lock())
@@ -225,7 +237,7 @@ def fetch_issues(repo: str, state: str = "all", *, refresh: bool = False) -> Fet
         with _cache_lock:
             cached = _cache.get(key)
         if cached:
-            age = (datetime.now(timezone.utc) - cached.fetched_at).total_seconds()
+            age = (datetime.now(UTC) - cached.fetched_at).total_seconds()
             fresh = age < _CACHE_TTL_SECONDS
             if (fresh and not refresh) or cached.fetched_at >= requested_at:
                 return cached
@@ -233,7 +245,7 @@ def fetch_issues(repo: str, state: str = "all", *, refresh: bool = False) -> Fet
         nodes = _fetch_with_any_token(owner, name, state)
         result = FetchResult(
             rows=tuple(_to_row(node) for node in nodes),
-            fetched_at=datetime.now(timezone.utc),
+            fetched_at=datetime.now(UTC),
         )
         with _cache_lock:
             _cache[key] = result
