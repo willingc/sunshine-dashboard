@@ -11,7 +11,8 @@ from fastapi.templating import Jinja2Templates
 
 from .fetch import fetch_issues, iso_to_datetime
 
-BASE_DIR = Path(__file__).resolve().parents[2]
+# templates/ and static/ ship inside the package so the app works when installed.
+BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 app = FastAPI(title="Issue Report Dashboard")
