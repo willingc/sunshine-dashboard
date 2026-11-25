@@ -107,11 +107,22 @@
                       {{ issue.state }}
                     </span>
                   </td>
-                  <td>{{ issue.created_at }}</td>
-                  <td>{{ issue.updated_at }}</td>
+                  <td class="text-nowrap" data-order="{{ issue.created_at }}" title="{{ issue.created_at }}">
+                    {{ issue.created_at[:10] }}
+                    <div class="small text-muted">{{ issue.created_at | age(now) }}</div>
+                  </td>
+                  <td class="text-nowrap" data-order="{{ issue.updated_at }}" title="{{ issue.updated_at }}">
+                    {{ issue.updated_at[:10] }}
+                    <div class="small text-muted">{{ issue.updated_at | age(now) }}</div>
+                  </td>
                   <td>{{ issue.comments }}</td>
                   <td>{{ issue.author }}</td>
-                  <td>{{ issue.labels }}</td>
+                  <td>
+                    {% for label in issue.labels %}
+                    <span class="badge rounded-pill label-badge"
+                          style="background-color: #{{ label.color }}; color: {{ label.text_color }}">{{ label.name }}</span>
+                    {% endfor %}
+                  </td>
                 </tr>
                 {% endfor %}
               </tbody>

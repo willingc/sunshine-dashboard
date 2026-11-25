@@ -11,3 +11,10 @@ body.dashboard-bg {
 #issues-table th {
   vertical-align: middle;
 }
+
+/* GitHub label colors; the border keeps very light labels visible on white. */
+.label-badge {
+  font-weight: 500;
+  margin: 0 0.25rem 0.25rem 0;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+}
