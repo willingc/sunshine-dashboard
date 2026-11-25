@@ -69,6 +69,10 @@ class FetchResult:
     fetched_at: datetime  # UTC
 
 
+class InvalidRepo(RuntimeError):
+    """The repo name isn't in 'owner/name' form."""
+
+
 class _BadCredentials(RuntimeError):
     """GitHub rejected the token (HTTP 401)."""
 
@@ -78,10 +82,10 @@ def iso_to_datetime(value: str) -> datetime:
 
 
 def parse_repo(repo: str) -> tuple[str, str]:
-    """Split 'owner/name' and validate it, raising RuntimeError if malformed."""
+    """Split 'owner/name' and validate it, raising InvalidRepo if malformed."""
     match = _REPO_RE.match(repo.strip())
     if not match:
-        raise RuntimeError(
+        raise InvalidRepo(
             f"Invalid repo '{repo}'. Expected 'owner/name', e.g. 'napari/napari'."
         )
     return match["owner"], match["name"]
@@ -190,6 +194,13 @@ def _fetch_nodes(owner: str, name: str, state: str, token: str) -> list[dict[str
         except URLError as exc:
             raise RuntimeError(
                 "Unable to connect to GitHub GraphQL. Check your network, proxy, or VPN."
+            ) from exc
+        except (TimeoutError, ConnectionError) as exc:
+            # Raised while reading the body (e.g. GitHub stalls mid-response),
+            # after urlopen has connected, so it isn't wrapped in URLError.
+            raise RuntimeError(
+                "Lost the connection to GitHub while reading its response "
+                f"({str(exc) or type(exc).__name__}). Try again or press Refresh."
             ) from exc
         issues = _issues_from_response(json.loads(payload))
         nodes.extend(issues.get("nodes", []) or [])

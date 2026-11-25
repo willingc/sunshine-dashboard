@@ -6,7 +6,7 @@ import subprocess
 import threading
 import time
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, Self
 from unittest import mock
 from urllib.error import HTTPError, URLError
 
@@ -154,6 +154,40 @@ def test_fetch_nodes_connection_error(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(fetch, "urlopen", mock.Mock(side_effect=URLError("down")))
     with pytest.raises(RuntimeError, match="Unable to connect"):
         fetch._fetch_nodes("o", "n", "open", "tok")
+
+
+class _FailingResponse:
+    """A urlopen() response whose body read fails, like a stalled connection."""
+
+    def __init__(self, error: Exception) -> None:
+        self.error = error
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        pass
+
+    def read(self) -> bytes:
+        raise self.error
+
+
+@pytest.mark.parametrize(
+    ("error", "shown"),
+    [
+        (TimeoutError("timed out"), "timed out"),
+        (ConnectionResetError(54, "Connection reset by peer"), "Connection reset"),
+        (TimeoutError(), "TimeoutError"),  # no message: falls back to the type name
+    ],
+)
+def test_fetch_nodes_body_read_failure_becomes_runtime_error(
+    monkeypatch: pytest.MonkeyPatch, error: Exception, shown: str
+) -> None:
+    monkeypatch.setattr(fetch, "urlopen", lambda *a, **k: _FailingResponse(error))
+    with pytest.raises(RuntimeError, match="Lost the connection to GitHub") as info:
+        fetch._fetch_nodes("o", "n", "open", "tok")
+    assert shown in str(info.value)
+    assert info.value.__cause__ is error
 
 
 # --- token lookup -----------------------------------------------------------
