@@ -9,9 +9,8 @@ description = "Visual dashboard for GitHub issue reports."
 readme = "README.md"
 requires-python = ">=3.15"
 dependencies = [
+    # The "standard" extra includes jinja2 and uvicorn[standard], which the app uses.
     "fastapi[standard]>=0.116.0",
-    "jinja2>=3.1.0",
-    "uvicorn>=0.35.0",
 ]
 
 [project.scripts]
@@ -21,7 +20,7 @@ sunshine-dashboard = "sunshine_dashboard.app:main"
 sunshine_dashboard = ["templates/*.html", "static/*.css"]
 
 [tool.fastapi]
-entrypoint = "src.sunshine_dashboard.app:app"
+entrypoint = "sunshine_dashboard.app:app"
 
 [dependency-groups]
 dev = [

@@ -1,34 +1,50 @@
-# Issue Report Dashboard
+# Contributing
 
-A standalone web app that fetches GitHub issues and displays them in a polished, sortable dashboard.
+Thanks for helping improve sunshine-dashboard!
 
-## Features
+## Setup
 
-- Pulls all issues for any GitHub repository (excluding pull requests)
-- Sort and filter by:
-  - creation date
-  - last active date
-  - state (`open`, `closed`, `all`)
-- Searchable and sortable table with summary cards
-
-## Quick Start
+You need Python 3.15+, [uv](https://docs.astral.sh/uv/), and the
+[GitHub CLI](https://cli.github.com/) logged in with `gh auth login`.
+See the [README](README.md#running-locally) for how to run the dashboard
+and how it finds a GitHub token.
 
 ```bash
-cd issue-report-dashboard
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e .
-issue-report-dashboard
+uv sync                          # create .venv with app and dev dependencies
+uv run sunshine-dashboard --reload
 ```
 
-Then open [http://127.0.0.1:8000](http://127.0.0.1:8000).
+## Project layout
 
-## Authentication
+```
+src/sunshine_dashboard/
+  app.py         FastAPI app, routes, and the CLI entry point
+  fetch.py       GitHub GraphQL fetching, token lookup, and caching
+  templates/     Jinja2 templates (shipped inside the package)
+  static/        CSS (shipped inside the package)
+tests/           pytest tests; conftest.py blocks all network and gh calls
+```
 
-The app tries `gh api` first and falls back to GitHub REST.
+New template or static file types must be added to
+`[tool.setuptools.package-data]` in `pyproject.toml`, or they won't be
+included when the package is installed.
 
-For higher API limits, set:
+## Before opening a pull request
 
 ```bash
-export GITHUB_TOKEN=your_token_here
+uv run pytest
+uv run ruff check .
+uv run ruff format .
 ```
+
+CI runs the same checks on every pull request. Tests must not reach GitHub:
+mock `fetch._fetch_with_any_token` (or `fetch.urlopen`) instead.
+
+If you change dependencies, commit the updated `uv.lock`. CI uses
+`uv sync --locked`, which fails if the lockfile is out of date.
+
+## Pull requests
+
+- Branch from `main` and keep each PR focused on one change.
+- Describe what changed, why, and how you tested it.
+- GitHub Actions are pinned to commit SHAs. Dependabot opens PRs to update them.

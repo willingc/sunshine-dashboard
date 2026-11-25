@@ -153,3 +153,13 @@ def test_main_cli_options(
     monkeypatch.setattr("sys.argv", ["sunshine-dashboard", *argv])
     app_module.main()
     run.assert_called_once_with("sunshine_dashboard.app:app", **expected)
+
+
+def test_external_assets_have_sri(client: TestClient, fake_fetch: mock.Mock) -> None:
+    html = client.get("/", params={"repo": "o/n"}).text
+    tags = re.findall(r"<(?:script|link)\b[^>]*>", html)
+    external = [t for t in tags if re.search(r'(?:src|href)="https?://', t)]
+    assert len(external) == 5
+    for tag in external:
+        assert re.search(r'integrity="sha384-[A-Za-z0-9+/=]+"', tag), tag
+        assert 'crossorigin="anonymous"' in tag, tag
