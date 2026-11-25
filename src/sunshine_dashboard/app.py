@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-from collections import Counter
+import argparse
 from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI, Query, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from .fetch import fetch_issues, iso_to_datetime
+from .fetch import FetchResult, fetch_issues, iso_to_datetime
 
 # templates/ and static/ ship inside the package so the app works when installed.
 BASE_DIR = Path(__file__).resolve().parent
@@ -25,18 +25,29 @@ def index(
     repo: str = Query(default="napari/napari"),
     sort_by: str = Query(default="created_at", pattern="^(created_at|updated_at)$"),
     descending: bool = Query(default=True),
-) -> HTMLResponse:
+    refresh: bool = Query(default=False),
+) -> Response:
+    repo = repo.strip()
     state = "open"
     error_message = ""
-    rows = []
+    result: FetchResult | None = None
     try:
-        rows = fetch_issues(repo=repo, state=state)
-        rows.sort(
-            key=lambda row: iso_to_datetime(getattr(row, sort_by)), reverse=descending
-        )
+        result = fetch_issues(repo=repo, state=state, refresh=refresh)
     except RuntimeError as exc:
         error_message = str(exc)
-    counts = Counter(row.state for row in rows)
+    else:
+        if refresh:
+            # Redirect so reloading or bookmarking the page doesn't refetch every time.
+            return RedirectResponse(
+                str(request.url.remove_query_params("refresh")), status_code=303
+            )
+
+    # Sort a copy: result.rows is the shared cached tuple.
+    rows = sorted(
+        result.rows if result else (),
+        key=lambda row: iso_to_datetime(getattr(row, sort_by)),
+        reverse=descending,
+    )
     return templates.TemplateResponse(
         request=request,
         name="index.html",
@@ -46,15 +57,21 @@ def index(
             "descending": descending,
             "issues": rows,
             "total": len(rows),
-            "open_count": counts.get("open", 0),
-            "closed_count": counts.get("closed", 0),
+            "fetched_at": result.fetched_at if result else None,
             "error_message": error_message,
         },
     )
 
 
 def main() -> None:
-    uvicorn.run("sunshine_dashboard.app:app", host="127.0.0.1", port=8000, reload=True)
+    parser = argparse.ArgumentParser(description="Run the sunshine dashboard.")
+    parser.add_argument("--host", default="127.0.0.1", help="default: %(default)s")
+    parser.add_argument("--port", type=int, default=8000, help="default: %(default)s")
+    parser.add_argument(
+        "--reload", action="store_true", help="restart on code changes (development)"
+    )
+    args = parser.parse_args()
+    uvicorn.run("sunshine_dashboard.app:app", host=args.host, port=args.port, reload=args.reload)
 
 
 if __name__ == "__main__":
