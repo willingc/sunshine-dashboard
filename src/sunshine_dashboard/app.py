@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
-from datetime import UTC, datetime
+from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import uvicorn
@@ -10,7 +12,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from .fetch import FetchResult, fetch_issues, iso_to_datetime
+from .fetch import FetchResult, IssueRow, fetch_issues, iso_to_datetime
 
 # templates/ and static/ ship inside the package so the app works when installed.
 BASE_DIR = Path(__file__).resolve().parent
@@ -40,6 +42,31 @@ def age(value: str, now: datetime) -> str:
 
 templates.env.filters["age"] = age
 
+STALE_AFTER = timedelta(days=180)
+NEW_WITHIN = timedelta(days=30)
+
+
+@dataclass(frozen=True)
+class Triage:
+    label: str
+    matches: Callable[[IssueRow, datetime], bool]
+
+
+# Triage stat tiles, in display order. Each one also filters the table (?triage=key).
+TRIAGE: dict[str, Triage] = {
+    "no_comments": Triage("No comments", lambda row, now: row.comments == 0),
+    "unlabeled": Triage("Unlabeled", lambda row, now: not row.labels),
+    "stale": Triage(
+        "No activity in 6 months",
+        lambda row, now: now - iso_to_datetime(row.updated_at) >= STALE_AFTER,
+    ),
+    "new": Triage(
+        "Opened in the last 30 days",
+        lambda row, now: now - iso_to_datetime(row.created_at) < NEW_WITHIN,
+    ),
+}
+_TRIAGE_PATTERN = "^(" + "|".join(TRIAGE) + ")$"
+
 app = FastAPI(title="Issue Report Dashboard")
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
@@ -51,6 +78,7 @@ def index(
     sort_by: str = Query(default="created_at", pattern="^(created_at|updated_at)$"),
     descending: bool = Query(default=True),
     refresh: bool = Query(default=False),
+    triage: str | None = Query(default=None, pattern=_TRIAGE_PATTERN),
 ) -> Response:
     repo = repo.strip()
     state = "open"
@@ -67,9 +95,37 @@ def index(
                 str(request.url.remove_query_params("refresh")), status_code=303
             )
 
+    now = datetime.now(UTC)
+    all_rows = result.rows if result else ()
+    stats = []
+    for key, item in TRIAGE.items():
+        count = sum(1 for row in all_rows if item.matches(row, now))
+        active = key == triage
+        # Clicking the active tile clears the filter; any other tile switches to it.
+        url = (
+            request.url.remove_query_params("triage")
+            if active
+            else request.url.include_query_params(triage=key)
+        )
+        stats.append(
+            {
+                "key": key,
+                "label": item.label,
+                "count": count,
+                "percent": round(100 * count / len(all_rows)) if all_rows else 0,
+                "active": active,
+                "url": str(url),
+            }
+        )
+
+    shown = (
+        [row for row in all_rows if TRIAGE[triage].matches(row, now)]
+        if triage
+        else all_rows
+    )
     # Sort a copy: result.rows is the shared cached tuple.
     rows = sorted(
-        result.rows if result else (),
+        shown,
         key=lambda row: iso_to_datetime(getattr(row, sort_by)),
         reverse=descending,
     )
@@ -81,9 +137,14 @@ def index(
             "sort_by": sort_by,
             "descending": descending,
             "issues": rows,
-            "total": len(rows),
+            "total": len(all_rows),
+            "shown": len(rows),
+            "stats": stats,
+            "triage": triage,
+            "triage_label": TRIAGE[triage].label if triage else "",
+            "clear_triage_url": str(request.url.remove_query_params("triage")),
             "fetched_at": result.fetched_at if result else None,
-            "now": datetime.now(UTC),
+            "now": now,
             "error_message": error_message,
         },
     )

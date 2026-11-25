@@ -18,3 +18,22 @@ body.dashboard-bg {
   margin: 0 0.25rem 0.25rem 0;
   border: 1px solid rgba(0, 0, 0, 0.12);
 }
+
+/* Triage stat tiles double as filters. */
+.stat-tile {
+  border: 2px solid transparent;
+  transition: border-color 0.15s, transform 0.15s;
+}
+.stat-tile:hover,
+.stat-tile:focus-visible {
+  border-color: var(--bs-primary-border-subtle);
+  transform: translateY(-1px);
+}
+.stat-tile-active {
+  border-color: var(--bs-primary);
+}
+.stat-value {
+  font-size: 1.75rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
