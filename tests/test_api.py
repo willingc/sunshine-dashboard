@@ -140,3 +140,16 @@ def test_openapi_documents_endpoint(client: TestClient) -> None:
     assert "/" not in schema["paths"]  # the HTML page isn't part of the API
     params = {p["name"] for p in schema["paths"]["/api/issues"]["get"]["parameters"]}
     assert params == {"repo", "sort_by", "descending", "triage", "refresh"}
+
+
+def test_github_timeout_is_502(monkeypatch: pytest.MonkeyPatch) -> None:
+    from test_fetch import _FailingResponse
+
+    monkeypatch.setattr(
+        fetch, "urlopen", lambda *a, **k: _FailingResponse(TimeoutError("timed out"))
+    )
+    monkeypatch.setattr(fetch, "_candidate_tokens", lambda: iter([("GH_TOKEN", "t")]))
+    client = TestClient(app_module.app, raise_server_exceptions=False)
+    response = client.get("/api/issues", params={"repo": "o/n"})
+    assert response.status_code == 502
+    assert response.json()["detail"].startswith("Lost the connection to GitHub")

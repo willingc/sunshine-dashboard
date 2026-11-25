@@ -352,3 +352,17 @@ def test_refresh_keeps_triage_filter(client: TestClient, triage_fetch: None) -> 
     )
     assert response.status_code == 303
     assert "triage=stale" in response.headers["location"]
+
+
+def test_github_timeout_shows_error_on_page(monkeypatch: pytest.MonkeyPatch) -> None:
+    from test_fetch import _FailingResponse
+
+    monkeypatch.setattr(
+        fetch, "urlopen", lambda *a, **k: _FailingResponse(TimeoutError("timed out"))
+    )
+    monkeypatch.setattr(fetch, "_candidate_tokens", lambda: iter([("GH_TOKEN", "t")]))
+    client = TestClient(app_module.app, raise_server_exceptions=False)
+    response = client.get("/", params={"repo": "o/n"})
+    assert response.status_code == 200
+    assert "Issue fetch failed" in response.text
+    assert "Lost the connection to GitHub" in response.text

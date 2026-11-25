@@ -195,6 +195,13 @@ def _fetch_nodes(owner: str, name: str, state: str, token: str) -> list[dict[str
             raise RuntimeError(
                 "Unable to connect to GitHub GraphQL. Check your network, proxy, or VPN."
             ) from exc
+        except (TimeoutError, ConnectionError) as exc:
+            # Raised while reading the body (e.g. GitHub stalls mid-response),
+            # after urlopen has connected, so it isn't wrapped in URLError.
+            raise RuntimeError(
+                "Lost the connection to GitHub while reading its response "
+                f"({str(exc) or type(exc).__name__}). Try again or press Refresh."
+            ) from exc
         issues = _issues_from_response(json.loads(payload))
         nodes.extend(issues.get("nodes", []) or [])
         page_info = issues.get("pageInfo") or {}
