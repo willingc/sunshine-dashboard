@@ -125,7 +125,8 @@
     <script>
       new DataTable("#issues-table", {
         pageLength: 25,
-        order: [[3, "desc"]],
+        // Match the server-side sort chosen in the form (Created = col 3, Last Active = col 4).
+        order: [[{{ 4 if sort_by == "updated_at" else 3 }}, "{{ 'desc' if descending else 'asc' }}"]],
       });
     </script>
   </body>
