@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest import mock
 
 import pytest
@@ -224,3 +224,131 @@ def test_labels_render_as_colored_badges(
     assert "background-color: #ededed; color: #000000" in html
     assert "&lt;b&gt;sneaky&lt;/b&gt;" in html
     assert "evil" not in html
+
+
+def _iso_days_ago(days: int) -> str:
+    return (datetime.now(UTC) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+LABEL = {"nodes": [{"name": "bug", "color": "d73a4a"}]}
+TRIAGE_NODES = [
+    # 1: new, no comments, unlabeled
+    make_node(1, createdAt=_iso_days_ago(5), updatedAt=_iso_days_ago(1)),
+    # 2: stale, labeled, has comments
+    make_node(
+        2,
+        createdAt=_iso_days_ago(400),
+        updatedAt=_iso_days_ago(200),
+        comments={"totalCount": 4},
+        labels=LABEL,
+    ),
+    # 3: stale, no comments, labeled
+    make_node(
+        3, createdAt=_iso_days_ago(300), updatedAt=_iso_days_ago(181), labels=LABEL
+    ),
+    # 4: recent activity, has comments, unlabeled
+    make_node(
+        4,
+        createdAt=_iso_days_ago(60),
+        updatedAt=_iso_days_ago(10),
+        comments={"totalCount": 1},
+    ),
+]
+TRIAGE_EXPECTED = {
+    "no_comments": [1, 3],
+    "unlabeled": [1, 4],
+    "stale": [2, 3],
+    "new": [1],
+}
+
+
+@pytest.fixture
+def triage_fetch(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        fetch, "_fetch_with_any_token", mock.Mock(return_value=TRIAGE_NODES)
+    )
+
+
+def _tiles(html: str) -> dict[str, tuple[str, str]]:
+    """Map each tile's label to (count, percent text)."""
+    found = re.findall(
+        r'<p class="text-muted mb-1">([^<]+)</p>\s*'
+        r'<p class="stat-value mb-0">([^<]+)</p>\s*'
+        r'<p class="small text-muted mb-0">([^<]+)</p>',
+        html,
+    )
+    return {label: (count, pct) for label, count, pct in found}
+
+
+def test_triage_tiles_show_counts_and_percent(
+    client: TestClient, triage_fetch: None
+) -> None:
+    tiles = _tiles(client.get("/", params={"repo": "o/n"}).text)
+    assert tiles == {
+        "No comments": ("2", "50% of open issues"),
+        "Unlabeled": ("2", "50% of open issues"),
+        "No activity in 6 months": ("2", "50% of open issues"),
+        "Opened in the last 30 days": ("1", "25% of open issues"),
+    }
+
+
+@pytest.mark.parametrize(("key", "expected"), TRIAGE_EXPECTED.items())
+def test_triage_filter_shows_only_matching_issues(
+    client: TestClient, triage_fetch: None, key: str, expected: list[int]
+) -> None:
+    html = client.get("/", params={"repo": "o/n", "triage": key}).text
+    assert sorted(issue_numbers(html)) == expected
+    # Tiles still count all open issues, not just the filtered ones.
+    assert _tiles(html)["No comments"][0] == "2"
+    assert f"{len(expected)} <span" in html and "of 4</span>" in html
+    assert "Show all</a>" in html
+    assert f'<input type="hidden" name="triage" value="{key}" />' in html
+
+
+def test_triage_tile_links_toggle(client: TestClient, triage_fetch: None) -> None:
+    html = client.get(
+        "/", params={"repo": "o/n", "sort_by": "updated_at", "triage": "stale"}
+    ).text
+    links = dict(
+        re.findall(r'href="([^"]+)"\s*(aria-current="true")?[^>]*>\s*<div', html)
+    )
+    active = [url for url, current in links.items() if current]
+    assert len(active) == 1
+    assert "triage" not in active[0]  # clicking the active tile clears the filter
+    assert "sort_by=updated_at" in active[0]  # other params are kept
+    others = [url for url, current in links.items() if not current]
+    assert sorted(re.search(r"triage=(\w+)", u)[1] for u in others) == [
+        "new",
+        "no_comments",
+        "unlabeled",
+    ]
+
+
+def test_no_triage_shows_all_without_filter_ui(
+    client: TestClient, triage_fetch: None
+) -> None:
+    html = client.get("/", params={"repo": "o/n"}).text
+    assert sorted(issue_numbers(html)) == [1, 2, 3, 4]
+    assert "Show all</a>" not in html
+    assert 'aria-current="true"' not in html
+    assert 'name="triage"' not in html
+
+
+def test_invalid_triage_is_rejected(client: TestClient, triage_fetch: None) -> None:
+    assert client.get("/", params={"triage": "bogus"}).status_code == 422
+
+
+def test_triage_tiles_hidden_when_no_issues(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(fetch, "_fetch_with_any_token", mock.Mock(return_value=[]))
+    html = client.get("/", params={"repo": "o/n"}).text
+    assert 'aria-label="Triage"' not in html
+
+
+def test_refresh_keeps_triage_filter(client: TestClient, triage_fetch: None) -> None:
+    response = client.get(
+        "/", params={"repo": "o/n", "triage": "stale", "refresh": "true"}
+    )
+    assert response.status_code == 303
+    assert "triage=stale" in response.headers["location"]

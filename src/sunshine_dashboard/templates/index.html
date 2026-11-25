@@ -43,6 +43,7 @@
               </select>
             </div>
             <div class="col-md-1 d-grid">
+              {% if triage %}<input type="hidden" name="triage" value="{{ triage }}" />{% endif %}
               <button class="btn btn-primary" type="submit">Load</button>
             </div>
           </div>
@@ -53,8 +54,16 @@
         <div class="col-md-6">
           <div class="card border-0 shadow-sm h-100">
             <div class="card-body">
-              <p class="text-muted mb-1">Open Issues Displayed</p>
-              <h2 class="h3 mb-0">{{ total }}</h2>
+              <p class="text-muted mb-1">Open issues</p>
+              <h2 class="h3 mb-0">
+                {% if triage %}{{ "{:,}".format(shown) }} <span class="h6 text-muted fw-normal">of {{ "{:,}".format(total) }}</span>{% else %}{{ "{:,}".format(total) }}{% endif %}
+              </h2>
+              {% if triage %}
+              <p class="small mb-0 mt-1">
+                Showing <strong>{{ triage_label | lower }}</strong> &middot;
+                <a href="{{ clear_triage_url }}">Show all</a>
+              </p>
+              {% endif %}
             </div>
           </div>
         </div>
@@ -74,6 +83,24 @@
           </div>
         </div>
       </section>
+
+      {% if total %}
+      <section class="row g-3 mb-4" aria-label="Triage">
+        {% for stat in stats %}
+        <div class="col-6 col-lg-3">
+          <a class="card shadow-sm h-100 text-reset text-decoration-none stat-tile{% if stat.active %} stat-tile-active{% endif %}"
+             href="{{ stat.url }}"
+             {% if stat.active %}aria-current="true" title="Show all issues"{% else %}title="Show only these issues"{% endif %}>
+            <div class="card-body">
+              <p class="text-muted mb-1">{{ stat.label }}</p>
+              <p class="stat-value mb-0">{{ "{:,}".format(stat.count) }}</p>
+              <p class="small text-muted mb-0">{{ stat.percent }}% of open issues</p>
+            </div>
+          </a>
+        </div>
+        {% endfor %}
+      </section>
+      {% endif %}
 
       {% if error_message %}
       <section class="alert alert-warning border-0 shadow-sm" role="alert">
