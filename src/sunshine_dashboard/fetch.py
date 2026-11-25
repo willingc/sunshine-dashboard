@@ -69,6 +69,10 @@ class FetchResult:
     fetched_at: datetime  # UTC
 
 
+class InvalidRepo(RuntimeError):
+    """The repo name isn't in 'owner/name' form."""
+
+
 class _BadCredentials(RuntimeError):
     """GitHub rejected the token (HTTP 401)."""
 
@@ -78,10 +82,10 @@ def iso_to_datetime(value: str) -> datetime:
 
 
 def parse_repo(repo: str) -> tuple[str, str]:
-    """Split 'owner/name' and validate it, raising RuntimeError if malformed."""
+    """Split 'owner/name' and validate it, raising InvalidRepo if malformed."""
     match = _REPO_RE.match(repo.strip())
     if not match:
-        raise RuntimeError(
+        raise InvalidRepo(
             f"Invalid repo '{repo}'. Expected 'owner/name', e.g. 'napari/napari'."
         )
     return match["owner"], match["name"]

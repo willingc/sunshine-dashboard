@@ -29,6 +29,19 @@ rejects a token as expired or revoked (`HTTP 401: Bad credentials`):
 
 Issue data is cached for 24 hours. Use the **Refresh** button to fetch fresh data.
 
+## JSON API
+
+The same data is available as JSON, sharing the dashboard's 24-hour cache:
+
+```bash
+curl 'http://127.0.0.1:8000/api/issues?repo=napari/napari&triage=unlabeled'
+```
+
+The response includes `total`, `count`, `fetched_at`, `triage_counts`, and the
+`issues` list. Parameters: `repo` (required), `sort_by` (`created_at` or
+`updated_at`), `descending`, `triage` (`no_comments`, `unlabeled`, `stale`,
+`new`), and `refresh`. Interactive docs are at <http://127.0.0.1:8000/docs>.
+
 ## Development
 
 ```bash
