@@ -235,7 +235,7 @@ def api_issues(
         result = fetch_issues(repo=repo, state=STATE, refresh=refresh)
     except InvalidRepo as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    except RuntimeError as exc:
+    except (RuntimeError, TimeoutError) as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     now = datetime.now(UTC)
