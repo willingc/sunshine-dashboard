@@ -6,7 +6,7 @@ FastAPI application
 
 ## Running locally
 
-Requires [uv](https://docs.astral.sh/uv/) and the [GitHub CLI](https://cli.github.com/), logged in with `gh auth login`.
+Requires Python 3.15+, [uv](https://docs.astral.sh/uv/) and the [GitHub CLI](https://cli.github.com/), logged in with `gh auth login`.
 
 From the repository root:
 
@@ -28,3 +28,13 @@ rejects a token as expired or revoked (`HTTP 401: Bad credentials`):
 3. Your GitHub CLI login (`gh auth token`)
 
 Issue data is cached for 24 hours. Use the **Refresh** button to fetch fresh data.
+
+## Development
+
+```bash
+uv run pytest              # tests (no network access needed)
+uv run ruff check .        # lint
+uv run ruff format .       # format
+```
+
+CI runs these on every pull request.
