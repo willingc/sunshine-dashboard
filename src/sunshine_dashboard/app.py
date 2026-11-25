@@ -210,10 +210,26 @@ class ErrorResponse(BaseModel):
     detail: str
 
 
+class ValidationErrorDetail(BaseModel):
+    loc: list[str | int]
+    msg: str
+    type: str
+
+
+class ValidationErrorResponse(BaseModel):
+    detail: str | list[ValidationErrorDetail]
+
+
 @app.get(
     "/api/issues",
     response_model=IssuesResponse,
-    responses={502: {"model": ErrorResponse, "description": "GitHub request failed"}},
+    responses={
+        422: {
+            "model": ValidationErrorResponse,
+            "description": "Invalid repository or query parameters",
+        },
+        502: {"model": ErrorResponse, "description": "GitHub request failed"},
+    },
     summary="Open issues for a repo, as JSON",
 )
 def api_issues(
